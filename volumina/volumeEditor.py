@@ -132,7 +132,7 @@ class VolumeEditor( QObject ):
             scene.setObjectName(name)
             scene.stackedImageSources = pump.stackedImageSources
 
-        self.cacheSize = 50
+        self.cacheSize = 250 # Default 50 
 
         ##
         ## interaction
