@@ -1,7 +1,7 @@
 from PyQt4.QtCore import QObject, QEvent, Qt, QPoint, QPointF, QRectF, QRect
 from volumina.slicingtools import rect2slicing
 import numpy as np
-from navigationControler import NavigationInterpreter
+from navigationControler import NavigationInterpreter, posView2D
 from volumina.layer import GrayscaleLayer
 
 
@@ -20,7 +20,7 @@ class ThresholdingInterpreter( QObject ):
     def state( self ):
         return self._current_state
 
-    def __init__( self, navigationControler, layerStack ):
+    def __init__( self, navigationControler, layerStack, posModel ):
         QObject.__init__( self )
         self._navCtrl = navigationControler
         self._navIntr = NavigationInterpreter( navigationControler )
@@ -32,6 +32,7 @@ class ThresholdingInterpreter( QObject ):
         self._steps_mean = 10 # TODO Scale based on range
         self._steps_delta = self._steps_mean*2
         self._channel_range = dict()
+        self._posModel = posModel
 
     def start( self ):
         if self._current_state == self.FINAL:
@@ -121,21 +122,32 @@ class ThresholdingInterpreter( QObject ):
     def onMouseMove_thresholding(self, imageview, event):
         # trying to get data so the actual lower and upper range can be used
         print imageview.scene()._tileProvider.tiling.boundingRectF()
-        sceneRectF = imageview.scene().views()[0].viewportRect()
-        tile_nos = imageview.scene()._tileProvider.tiling.intersected( sceneRectF )
-        stack_id = imageview.scene()._tileProvider._current_stack_id
-        for tile_no in tile_nos:
-            qimg, progress = imageview.scene()._tileProvider._cache.tile(stack_id, tile_no)
-            print progress
-            print qimg.format()
+        sceneRectF = imageview.viewportRect()
+        x, y = sceneRectF.x(), sceneRectF.y()
+        x2, y2 = x + sceneRectF.width(), y + sceneRectF.height()
+        startPoint = imageview.mapScene2Data( QPoint(x,y) )
+        data_x, data_y, = startPoint.x(), startPoint.y()
+        stopPoint = imageview.mapScene2Data( QPoint(x2, y2) )
+        data_x2, data_y2, = stopPoint.x(), stopPoint.y()
+        data_x = max(data_x, 0)
+        data_y = max(data_y, 0)
+        shape2D = posView2D( list(self._posModel.shape5D[1:4]), axis=self._posModel.activeView )
+        data_x2 = min(data_x2, shape2D[0])
+        data_y2 = min(data_y2, shape2D[1])
+        #tile_nos = imageview.scene()._tileProvider.tiling.intersected( sceneRectF )
+        #stack_id = imageview.scene()._tileProvider._current_stack_id
+#        for tile_no in tile_nos:
+#            qimg, progress = imageview.scene()._tileProvider._cache.tile(stack_id, tile_no)
+#            print progress
+#            print qimg.format()
 
-        for i, v in enumerate(reversed(imageview.scene()._tileProvider._sims)):
-            visible, layerOpacity, layerImageSource = v
-            if not visible:
-                continue
-            print layerImageSource
-            patch = imageview.scene()._tileProvider._cache.layer(stack_id, layerImageSource, tile_nos[0] )
-            print 'pppppppppppp ' , patch.format()
+#        for i, v in enumerate(reversed(imageview.scene()._tileProvider._sims)):
+#            visible, layerOpacity, layerImageSource = v
+#            if not visible:
+#                continue
+#            print layerImageSource
+#            patch = imageview.scene()._tileProvider._cache.layer(stack_id, layerImageSource, tile_nos[0] )
+#            print 'pppppppppppp ' , patch.format()
 
         ##### patch = self._cache.layer(stack_id, layerImageSource, tile_nr )
         # print imageview.scene().dataRect.x()
@@ -143,11 +155,23 @@ class ThresholdingInterpreter( QObject ):
         # print imageview.scene().dataRect.rect()
         # print '## ', imageview.scene()._tileProvider.tiling.scene2data.mapRect(imageview.scene().dataRect.rect())
         
-        print 'S_ID: ' , stack_id
-        print '## ', imageview.scene()._tileProvider._cache
+#        print 'S_ID: ' , stack_id
+#        print '## ', imageview.scene()._tileProvider._cache
 
         # print rect2slicing(QRect(0,0,229,136))
-        # print self._active_layer._datasources[0].request(rect2slicing(QRect(0,0,229,136)))
+        #slicing = rect2slicing( QRect(data_x, data_y, data_x2 - data_x, data_y2 - data_y) )
+        x_pos = self._posModel.slicingPos5D[1]
+        y_pos = self._posModel.slicingPos5D[2]
+        z_pos = self._posModel.slicingPos5D[3]
+        if self._posModel.activeView == 0:
+            slicing = [slice(0, 1), slice(x_pos, x_pos+1), slice(data_x, data_x2), slice(data_y, data_y2), slice(self._active_layer_idx, self._active_layer_idx+1)]
+        if self._posModel.activeView == 2:
+            slicing = [slice(0, 1), slice(data_x, data_x2), slice(y_pos, y_pos+1), slice(data_y, data_y2), slice(self._active_layer_idx, self._active_layer_idx+1)]
+        if self._posModel.activeView == 2:
+            slicing = [slice(0, 1), slice(data_x, data_x2), slice(data_y, data_y2), slice(z_pos, z_pos+1), slice(self._active_layer_idx, self._active_layer_idx+1)]
+        request = self._active_layer._datasources[0].request(slicing)
+        result = request.wait()
+        print "RESULT INFO:", result.shape, result.min(), result.max()
         '''
         print self._active_layer._datasources[0].request(QRectF(100.,100.,
                                                                 100.,100.)) 
@@ -174,7 +198,8 @@ class ThresholdingInterpreter( QObject ):
         range_delta = np.abs(range_upper - range_lower)
         range_mean = range_lower + range_delta/2.0
         print range_lower, range_upper, range_delta, range_mean
-        pos = imageview.mapToGlobal( event.pos() )
+        pos = imageview.mapMouseCoordinates2Data( event.pos() )
+        #pos = imageview.mapToGlobal( event.pos() )
         dx =  pos.x() - self._current_position.x()
         dy =  self._current_position.y() - pos.y()
 

@@ -176,7 +176,8 @@ class VolumeEditor( QObject ):
         # thresholding control
         # self.thresControler = ThresholdingControler(self.posModel)
         self.thresInterpreter = ThresholdingInterpreter(self.navCtrl, 
-                                                        self.layerStack)
+                                                        self.layerStack,
+                                                        self.posModel)
                                                         # self.thresControler)
         # initial interaction mode
         self.eventSwitch.interpreter = self.navInterpret
