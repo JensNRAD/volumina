@@ -29,8 +29,13 @@ class ThresholdingInterpreter( QObject ):
         self._active_layer_idx = -1
         self._current_state = self.FINAL
         self._current_position = QPoint(0,0)
-        self._steps_mean = 10 # TODO Scale based on range
+        # Setting default values, scaled on actual data later on 
+        self._steps_mean = 10 
         self._steps_delta = self._steps_mean*2
+        self._steps_scaling = 0.07
+        self._range_max = 4096.0 # hardcoded, in the case drange is not set
+        self._range_min = -4096.0
+        self._range = np.abs(self._range_max-self._range_min)
         self._channel_range = dict()
         self._posModel = posModel
 
@@ -52,14 +57,15 @@ class ThresholdingInterpreter( QObject ):
                     and event.button() == Qt.LeftButton \
                     and event.modifiers() == Qt.NoModifier \
                     and self._navIntr.mousePositionValid(watched, event): # TODO maybe remove, if we can find out which view is active
-                print 'Left button pressed, entering thresholding mode'
                 self.set_active_layer()
+                if self.get_drange() != None:
+                    self._range_min, self._range_max = self.get_drange()
                 if self.valid_layer:
                     self._current_state = self.THRESHOLDING_MODE
                     if self._active_layer_idx in self._channel_range:
                         self._active_layer.set_normalize(0, self._channel_range[self._active_layer_idx])
-                        self._current_position = watched.mapToGlobal( event.pos() )
-                        return True
+                    self._current_position = watched.mapToGlobal( event.pos() )
+                    return True
                 else:
                     self._current_state = self.NO_VALID_LAYER
                 return self._navIntr.eventFilter( watched, event )
@@ -81,7 +87,6 @@ class ThresholdingInterpreter( QObject ):
             assert self._active_layer != None, 'Thresholding: No active layer set'
             if etype == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
                 self._current_state = self.DEFAULT_MODE
-                print 'Left button released, leaving thresholding'
                 self._active_layer = None
                 self.onExit_threshold( watched, event )
                 return True
@@ -95,7 +100,9 @@ class ThresholdingInterpreter( QObject ):
             return self._navIntr.eventFilter( watched, event )
     
     def onRightClick_resetThreshold(self, imageview, event):
-        self._active_layer.set_normalize(0, (0,400)) # TODO find values
+        range = self.get_min_max_of_current_view(imageview)
+        self._active_layer.set_normalize(0, (range[0],range[1]))
+        self._channel_range[self._active_layer_idx] = (range[0],range[1])
 
     def get_number_of_channels(self, layerStack):
         for idx, layer in enumerate(layerStack):
@@ -119,21 +126,137 @@ class ThresholdingInterpreter( QObject ):
         # self._current_position.setX(0)
         # self._current_position.setY(0)
 
+    def get_drange(self):
+        """ 
+        returns tuple of drange (min, max) as set in hdf5 file or None 
+        if nothing is specified
+        """
+        return self._active_layer._datasources[0]._rawSource._op5.Output.meta.drange
+
+    def get_min_max_of_current_view(self, imageview):
+        """
+        Function returns min and max value of the current view 
+        based on the raw data.
+        Ugly hack, but all we got for now
+        """
+        shape2D = posView2D( list(self._posModel.shape5D[1:4]), 
+                             axis=self._posModel.activeView )
+        data_x, data_y = 0, 0
+        data_x2, data_y2 = shape2D[0], shape2D[1]
+        
+        if self._posModel.activeView == 0:
+            x_pos = self._posModel.slicingPos5D[1]
+            slicing = [slice(0, 1), 
+                       slice(x_pos, x_pos+1), 
+                       slice(data_x, data_x2), 
+                       slice(data_y, data_y2), 
+                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+        if self._posModel.activeView == 1:
+            y_pos = self._posModel.slicingPos5D[2]
+            slicing = [slice(0, 1), 
+                       slice(data_x, data_x2), 
+                       slice(y_pos, y_pos+1), 
+                       slice(data_y, data_y2), 
+                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+        if self._posModel.activeView == 2:
+            z_pos = self._posModel.slicingPos5D[3]
+            slicing = [slice(0, 1), 
+                       slice(data_x, data_x2), 
+                       slice(data_y, data_y2), 
+                       slice(z_pos, z_pos+1), 
+                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+        request = self._active_layer._datasources[0].request(slicing)
+        result = request.wait()
+        return result.min(), result.max()
+
     def onMouseMove_thresholding(self, imageview, event):
-        # trying to get data so the actual lower and upper range can be used
-        print imageview.scene()._tileProvider.tiling.boundingRectF()
-        sceneRectF = imageview.viewportRect()
-        x, y = sceneRectF.x(), sceneRectF.y()
-        x2, y2 = x + sceneRectF.width(), y + sceneRectF.height()
-        startPoint = imageview.mapScene2Data( QPoint(x,y) )
-        data_x, data_y, = startPoint.x(), startPoint.y()
-        stopPoint = imageview.mapScene2Data( QPoint(x2, y2) )
-        data_x2, data_y2, = stopPoint.x(), stopPoint.y()
-        data_x = max(data_x, 0)
-        data_y = max(data_y, 0)
-        shape2D = posView2D( list(self._posModel.shape5D[1:4]), axis=self._posModel.activeView )
-        data_x2 = min(data_x2, shape2D[0])
-        data_y2 = min(data_y2, shape2D[1])
+        if self._active_layer_idx not in self._channel_range:
+            range = self.get_min_max_of_current_view(imageview)
+            range_lower = range[0]
+            range_upper = range[1]
+            # range_lower = self._active_layer.normalize[0][0]
+            # range_upper = self._active_layer.normalize[0][1]
+        else:
+            range = self._channel_range[self._active_layer_idx]
+            range_lower = range[0]
+            range_upper = range[1]
+        # don't know what version is more efficient
+        # range_delta = np.sqrt((range_upper - range_lower)**2) 
+        range_delta = np.abs(range_upper - range_lower)
+        range_mean = range_lower + range_delta/2.0
+        # print range_lower, range_upper, range_delta, range_mean
+
+        self._steps_mean = range_delta * self._steps_scaling
+        self._steps_delta = self._steps_mean * 2
+        # pos = imageview.mapMouseCoordinates2Data( event.pos() )
+        pos = imageview.mapToGlobal( event.pos() )
+        dx =  pos.x() - self._current_position.x()
+        dy =  self._current_position.y() - pos.y()
+
+        # print 'Difference: ' , dx, ',',dy
+        if dx > 0.0:
+            # move mean to right
+            range_mean += self._steps_mean
+        elif dx < 0.0:
+            # move mean to left
+            range_mean -= self._steps_mean
+        
+        if dy > 0.0:
+            # increase delta
+            range_delta += self._steps_delta
+        elif dy < 0.0:
+            # decrease delta
+            range_delta -= self._steps_delta
+
+        # check the bounds, ugly use min max values actually present
+        if range_mean < self._range_min:
+            range_mean = self._range_min
+        elif range_mean > self._range_max:
+            range_mean = self._range_max
+        
+        if range_delta < 1:
+            range_delta = 1
+        elif range_delta > self._range: 
+            range_delta = self._range
+
+        a = range_mean - range_delta/2.0
+        b = range_mean + range_delta/2.0
+
+        if a < self._range_min:
+            a = self._range_min
+        elif a > self._range_max:
+            a = self._range_max
+        
+        if b < self._range_min:
+            b = self._range_min
+        elif b > self._range_max:
+            b = self._range_max
+
+        assert a <= b 
+
+        # TODO test if in allowed range (i.e. max and min of data)
+        self._active_layer.set_normalize(0, (a,b))
+        self._channel_range[self._active_layer_idx] = (a,b)
+        self._current_position = pos
+        
+
+#*******************************************************************************
+# T h r e s h o l d i n g  C o n t r o l e r                                   *
+#*******************************************************************************
+
+# TODO Class not needed, remove
+class ThresholdingControler(QObject):
+    
+    def __init__(self, positionModel):
+        QObject.__init__(self, parent=None)
+        self._positionModel = positionModel
+
+
+
+# BIG BLOCK OF JUNK
+# trying to get data so the actual lower and upper range can be used
+#        print imageview.scene()._tileProvider.tiling.boundingRectF()
+        
         #tile_nos = imageview.scene()._tileProvider.tiling.intersected( sceneRectF )
         #stack_id = imageview.scene()._tileProvider._current_stack_id
 #        for tile_no in tile_nos:
@@ -160,18 +283,7 @@ class ThresholdingInterpreter( QObject ):
 
         # print rect2slicing(QRect(0,0,229,136))
         #slicing = rect2slicing( QRect(data_x, data_y, data_x2 - data_x, data_y2 - data_y) )
-        x_pos = self._posModel.slicingPos5D[1]
-        y_pos = self._posModel.slicingPos5D[2]
-        z_pos = self._posModel.slicingPos5D[3]
-        if self._posModel.activeView == 0:
-            slicing = [slice(0, 1), slice(x_pos, x_pos+1), slice(data_x, data_x2), slice(data_y, data_y2), slice(self._active_layer_idx, self._active_layer_idx+1)]
-        if self._posModel.activeView == 2:
-            slicing = [slice(0, 1), slice(data_x, data_x2), slice(y_pos, y_pos+1), slice(data_y, data_y2), slice(self._active_layer_idx, self._active_layer_idx+1)]
-        if self._posModel.activeView == 2:
-            slicing = [slice(0, 1), slice(data_x, data_x2), slice(data_y, data_y2), slice(z_pos, z_pos+1), slice(self._active_layer_idx, self._active_layer_idx+1)]
-        request = self._active_layer._datasources[0].request(slicing)
-        result = request.wait()
-        print "RESULT INFO:", result.shape, result.min(), result.max()
+
         '''
         print self._active_layer._datasources[0].request(QRectF(100.,100.,
                                                                 100.,100.)) 
@@ -184,75 +296,22 @@ class ThresholdingInterpreter( QObject ):
         dy = o.y()-n.y()
         '''
 
-        if self._active_layer_idx not in self._channel_range:
-            range_lower = self._active_layer.normalize[0][0]
-            range_upper = self._active_layer.normalize[0][1]
-        else:
-            range = self._channel_range[self._active_layer_idx]
-            print '----------' , range
-            print self._channel_range
-            range_lower = range[0]
-            range_upper = range[1]
-        # don't know what version is more efficient
-        # range_delta = np.sqrt((range_upper - range_lower)**2) 
-        range_delta = np.abs(range_upper - range_lower)
-        range_mean = range_lower + range_delta/2.0
-        print range_lower, range_upper, range_delta, range_mean
-        pos = imageview.mapMouseCoordinates2Data( event.pos() )
-        #pos = imageview.mapToGlobal( event.pos() )
-        dx =  pos.x() - self._current_position.x()
-        dy =  self._current_position.y() - pos.y()
-
-        # print 'Difference: ' , dx, ',',dy
-        if dx > 0.0:
-            # move mean to right
-            range_mean += self._steps_mean
-        elif dx < 0.0:
-            # move mean to left
-            range_mean -= self._steps_mean
-        
-        if dy > 0.0:
-            # increase delta
-            range_delta += self._steps_delta
-        elif dy < 0.0:
-            # decrease delta
-            range_delta -= self._steps_delta
-        # if range_delta < 1:
-          #  range_delta = 1
-
-        print range_lower, range_upper, range_delta, range_mean
-
-        # check the bounds, ugly use min max values actually present
-        if range_mean < -4096.0:
-            range_mean = -4096.0
-        elif range_mean > 4096.0:
-            range_mean = 4096.0
-        
-        if range_delta < 1:
-            range_delta = 1
-        elif range_delta > 2*4096.0: 
-            range_delta = 2*4096.0
-
-        a = range_mean - range_delta/2.0
-        b = range_mean + range_delta/2.0
-
-        if a < -4096.0:
-            a = -4096.0
-        elif a > 4096.0:
-            a = 4096.0
-        
-        if b < -4096.0:
-            b = -4096.0
-        elif b > 4096.0:
-            b = 4096.0
-
-        assert a <= b 
-
-        # TODO test if in allowed range (i.e. max and min of data)
-        self._active_layer.set_normalize(0, (a,b))
-        self._channel_range[self._active_layer_idx] = (a,b)
-        self._current_position = pos
-
+        '''
+        sceneRectF = imageview.viewportRect()
+        x, y = sceneRectF.x(), sceneRectF.y()
+        x2, y2 = x + sceneRectF.width(), y + sceneRectF.height()
+        startPoint = imageview.mapScene2Data( QPoint(x,y) )
+        data_x, data_y, = startPoint.x(), startPoint.y()
+        stopPoint = imageview.mapScene2Data( QPoint(x2, y2) )
+        data_x2, data_y2, = stopPoint.x(), stopPoint.y()
+        data_x = max(data_x, 0)
+        data_y = max(data_y, 0)
+        shape2D = posView2D( list(self._posModel.shape5D[1:4]), 
+                             axis=self._posModel.activeView )
+        print 'Shape 2D ' , shape2D
+        data_x2 = min(data_x2, shape2D[0])
+        data_y2 = min(data_y2, shape2D[1])
+        '''
 
         '''
         p = event.pos()
@@ -263,14 +322,7 @@ class ThresholdingInterpreter( QObject ):
         print 'Thresholding', p.x(), ' - ' , p.y() 
         '''
 
-#*******************************************************************************
-# T h r e s h o l d i n g  C o n t r o l e r                                   *
-#*******************************************************************************
-
-# TODO Class not needed, remove
-class ThresholdingControler(QObject):
-    
-    def __init__(self, positionModel):
-        QObject.__init__(self, parent=None)
-        self._positionModel = positionModel
-
+# TODO
+    # Remove debug prints
+    # merge with newest git from master
+    # 

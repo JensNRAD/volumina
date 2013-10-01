@@ -296,7 +296,6 @@ class NormalizableLayer( Layer ):
         else:
             self._autoMinMax[datasourceIdx] = False
         self._normalize[datasourceIdx] = value 
-        print 'Value: ' , value , ' (datasourceIdx: ' , datasourceIdx , ')'
         self.normalizeChanged.emit(datasourceIdx, value[0], value[1])
 
     def __init__( self, datasources, range=None, normalize=None, direct=False ):

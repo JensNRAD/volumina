@@ -174,11 +174,9 @@ class VolumeEditor( QObject ):
             self.brushingControler._brushingModel.brushSizeChanged.connect(v._sliceIntersectionMarker._set_diameter)
 
         # thresholding control
-        # self.thresControler = ThresholdingControler(self.posModel)
         self.thresInterpreter = ThresholdingInterpreter(self.navCtrl, 
                                                         self.layerStack,
                                                         self.posModel)
-                                                        # self.thresControler)
         # initial interaction mode
         self.eventSwitch.interpreter = self.navInterpret
 
