@@ -508,6 +508,7 @@ class MinMaxSource( QObject ):
 
     def _getMinMax(self, data):
         dmin = np.min(data)
+        print 'dddddddddddddddddmin ', dmin
         dmax = np.max(data)
         dmin = min(self._bounds[0], dmin)
         dmax = max(self._bounds[1], dmax)
@@ -518,10 +519,26 @@ class MinMaxSource( QObject ):
             dirty = True
 
         if dirty:
-            self._bounds[0] = min(self._bounds[0], dmin)
-            self._bounds[1] = max(self._bounds[0], dmax)
+            self._bounds[0] = dmin # min(self._bounds[0], dmin)
+            self._bounds[1] = dmax # max(self._bounds[0], dmax)
             self.boundsChanged.emit(self._bounds)
 
+            '''
+        dmin = np.min(data)
+        dmax = np.max(data)
+        dirty = False
+        if (np.abs(self._bounds[0]-dmin)) > 200.: #np.abs(self._bounds[0])*0.1:
+            dirty = True
+        if (np.abs(self._bounds[1]-dmax)) > 200.: #np.abs(self._bounds[1])*0.1:
+            dirty = True
+            
+        print 'dmin :' , np.min(data)
+        if dirty:
+            self._bounds[0] =  dmin # min(self._bounds[0], dmin)
+            self._bounds[1] =  dmax # max(self._bounds[1], dmax)
+            self.boundsChanged.emit(self._bounds)
+            print 'Bounds: ' , self._bounds
+            '''
             # Our min/max have changed, which means we must force the TileProvider to re-request all tiles.
             # If we simply mark everything dirty now, then nothing changes for the tile we just rendered.
             # (It was already dirty.  That's why we are rendering it right now.)

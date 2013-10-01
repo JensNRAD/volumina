@@ -18,6 +18,7 @@ from positionModel import PositionModel
 from navigationControler import NavigationControler, NavigationInterpreter
 from brushingcontroler import BrushingInterpreter, BrushingControler, \
                               CrosshairControler
+from thresholdingcontroler import ThresholdingInterpreter
 from brushingmodel import BrushingModel
 from slicingtools import SliceProjection
 
@@ -172,6 +173,11 @@ class VolumeEditor( QObject ):
         for v in self.imageViews:
             self.brushingControler._brushingModel.brushSizeChanged.connect(v._sliceIntersectionMarker._set_diameter)
 
+        # thresholding control
+        # self.thresControler = ThresholdingControler(self.posModel)
+        self.thresInterpreter = ThresholdingInterpreter(self.navCtrl, 
+                                                        self.layerStack)
+                                                        # self.thresControler)
         # initial interaction mode
         self.eventSwitch.interpreter = self.navInterpret
 
@@ -195,7 +201,9 @@ class VolumeEditor( QObject ):
             s._invalidateRect()
 
     def setInteractionMode( self, name):
-        modes = {'navigation': self.navInterpret, 'brushing': self.brushingInterpreter}
+        modes = {'navigation': self.navInterpret, 
+                 'brushing': self.brushingInterpreter,
+                 'thresholding' : self.thresInterpreter}
         self.eventSwitch.interpreter = modes[name]
 
     def cleanUp(self):
