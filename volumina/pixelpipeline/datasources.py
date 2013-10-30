@@ -135,7 +135,7 @@ class RelabelingArraySource( ArraySource ):
     def setRelabeling( self, relabeling ):
         """Sets new relabeling vector. It should have a len(relabling) == max(your data)+1
            and give, for each possible data value x, the relabling as relabeling[x]."""   
-        assert relabeling.dtype == self._array.dtype
+        assert relabeling.dtype == self._array.dtype, "relabeling.dtype=%r != self._array.dtype=%r" % (relabeling.dtype, self._array.dtype)
         self._relabeling = relabeling
         self.setDirty(5*(slice(None),))
 
@@ -260,10 +260,6 @@ class LazyflowSource( QObject ):
         for op in reversed(self.additional_owned_ops):
             op.cleanUp()
 
-    def __del__(self):
-        if self._op5 is not None:
-            self._op5.cleanUp()
-            
     def dtype(self):
         dtype = self._orig_outslot.meta.dtype
         assert dtype is not None, "Your LazyflowSource doesn't have a dtype! Is your lazyflow slot properly configured in setupOutputs()?"
