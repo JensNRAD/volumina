@@ -323,6 +323,5 @@ class ThresholdingControler(QObject):
         '''
 
 # TODO
-    # Remove debug prints
     # merge with newest git from master
     # 
