@@ -96,7 +96,8 @@ class GrayscaleImageSource( ImageSource ):
         self._layer = layer
         
         self._arraySource2D.isDirty.connect(self.setDirty)
-        self._layer.normalizeChanged.connect(lambda: self.setDirty((slice(None,None), slice(None,None))))
+        if hasattr(self._layer, "normalizeChanged"):
+            self._layer.normalizeChanged.connect(lambda: self.setDirty((slice(None,None), slice(None,None))))
 
     def request( self, qrect, along_through=None ):
         if cfg.getboolean('pixelpipeline', 'verbose'):
@@ -303,7 +304,8 @@ class ColortableImageSource( ImageSource ):
         self._layer = layer
         self.updateColorTable()
         self._layer.colorTableChanged.connect(self.updateColorTable)
-        self._layer.normalizeChanged.connect(lambda: self.setDirty((slice(None,None), slice(None,None))))
+        if hasattr(self._layer, "normalizeChanged"):
+            self._layer.normalizeChanged.connect(lambda: self.setDirty((slice(None,None), slice(None,None))))
 
     def updateColorTable(self):
         layerColorTable = self._layer.colorTable
@@ -348,6 +350,7 @@ class ColortableImageRequest( object ):
         self._colorTable = colorTable
         self.direct = direct
         self._normalize = normalize
+        assert normalize is None or len(normalize) == 2
 
     def wait(self):
         return self.toImage()

@@ -5,11 +5,10 @@ from volumina.pixelpipeline.datasources import *
 from volumina.pixelpipeline.datasourcefactories import *
 from volumina.layer import *
 from volumina.layerstack import LayerStackModel
-from volumina.volumeEditor import VolumeEditor
 from volumina.navigationControler import NavigationInterpreter
 from volumina import colortables
 
-from PyQt4.QtCore import QTimer
+from PyQt4.QtCore import QTimer, pyqtSignal
 from PyQt4.QtGui import QMainWindow, QApplication, QIcon, QAction, qApp
 from PyQt4.uic import loadUi
 
@@ -155,7 +154,9 @@ class Viewer(QMainWindow):
         f.setBold(True)
         self.actionCurrentView.setFont(f)
 
-        self.editor = VolumeEditor(self.layerstack)
+        # Lazy import here to prevent this module from ignoring volumine.NO3D flag.
+        from volumina.volumeEditor import VolumeEditor
+        self.editor = VolumeEditor(self.layerstack, parent=self)
 
         #make sure the layer stack widget, which is the right widget
         #managed by the splitter self.splitter shows up correctly
@@ -165,6 +166,14 @@ class Viewer(QMainWindow):
             s = [int(0.66*s[0]), s[0]-int(0.66*s[0])]
             self.splitter.setSizes(s)
         QTimer.singleShot(0, adjustSplitter)
+        
+    @property
+    def title(self):
+        return self.windowTitle()
+    
+    @title.setter
+    def title(self, t):
+        self.setWindowTitle(t)
         
     def initLayerstackModel(self):
         self.layerstack = LayerStackModel()
