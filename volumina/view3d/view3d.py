@@ -1,3 +1,19 @@
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# Copyright 2011-2014, the ilastik developers
+
 import volumina
 if volumina.NO3D:
     # For testing purposes, it is sometimes convenient to intentionally disable this module.
@@ -36,6 +52,9 @@ from slicingPlanesWidget import SlicingPlanesWidget
 from volumina.events import Event
 from volumina.layer import ColortableLayer
 from GenerateModelsFromLabels_thread import MeshExtractorDialog
+
+import logging
+logger = logging.getLogger(__name__)
 
 def convertVTPtoOBJ(vtpFilename, objFilename):
     f = open(vtpFilename, 'r')
@@ -142,14 +161,14 @@ class QVTKOpenGLWidget(QVTKWidget2):
     
     def mousePressEvent(self, e):
         if e.type() == QEvent.MouseButtonDblClick:
-            print "double clicked"
+            logger.debug( "double clicked" )
             #self.picker.SetTolerance(0.05)
             picker = vtkCellPicker()
             picker.SetTolerance(0.05)
             res = picker.Pick(e.pos().x(), e.pos().y(), 0, self.renderer)
             if res > 0:
                 c = picker.GetPickPosition()
-                print " picked at coordinate =", c
+                logger.debug( " picked at coordinate = {}".format( c ) )
                 self.emit(SIGNAL("objectPicked"), c[0:3])
         else:
             QVTKWidget2.mousePressEvent(self, e)
@@ -392,7 +411,7 @@ class OverviewScene(QWidget):
                 vtpFilename = "%s%02d.vtp" % (filename, i)
                 objFilename = "%s%02d.obj" % (filename, i)
                 
-                print "writing VTP file '%s'" % vtpFilename
+                logger.info( "writing VTP file '%s'" % vtpFilename )
                 d = p.GetMapper().GetInput()
                 w = vtkPolyDataWriter()
                 w.SetFileTypeToASCII()
@@ -400,7 +419,7 @@ class OverviewScene(QWidget):
                 w.SetFileName("%s%02d.vtp" % (filename, i))
                 w.Write()
                 
-                print "converting to OBJ file '%s'" % objFilename
+                logger.info( "converting to OBJ file '%s'" % objFilename )
                 convertVTPtoOBJ(vtpFilename, objFilename)
                 
                 #renWin = vtkRenderWindow()
@@ -419,16 +438,16 @@ class OverviewScene(QWidget):
         self.ChangeSlice( coor[2], 2)
         
     def __onLeftButtonReleased(self):
-        print "CLICK"
+        logger.debug( "CLICK" )
     
     def ToggleAnaglyph3D(self):
         self.anaglyph = not self.anaglyph
         if self.anaglyph:
-            print 'setting stero mode ON'
+            logger.debug( 'setting stero mode ON' )
             self.qvtk.renderWindow.StereoRenderOn()
             self.qvtk.renderWindow.SetStereoTypeToAnaglyph()
         else:
-            print 'setting stero mode OFF'
+            logger.debug( 'setting stero mode OFF' )
             self.qvtk.renderWindow.StereoRenderOff()
         self.qvtk.update()
     
@@ -461,7 +480,7 @@ class OverviewScene(QWidget):
         self.qvtk.update()
         
     def DisplayObjectMeshes(self, v, suppressLabels=(), smooth=True):
-        print "OverviewScene::DisplayObjectMeshes", suppressLabels
+        logger.debug( "OverviewScene::DisplayObjectMeshes {}".format( suppressLabels ) )
         self.dlg = MeshExtractorDialog(self)
         self.dlg.finished.connect(self.onObjectMeshesComputed)
         self.dlg.show()
@@ -472,7 +491,7 @@ class OverviewScene(QWidget):
     
     def onObjectMeshesComputed(self):
         self.dlg.accept()
-        print "*** Preparing 3D view ***"
+        logger.debug( "*** Preparing 3D view ***" )
         
         #Clean up possible previous 3D displays
         for c in self.cutter:
@@ -507,7 +526,7 @@ class OverviewScene(QWidget):
         #self.renderer.SetOcclusionRatio(0.0);
 
         for i, g in self.dlg.extractor.meshes.items():
-            print " - showing object with label =", i
+            logger.debug( " - showing object with label = {}".format(i) )
             mapper = vtkPolyDataMapper()
             mapper.SetInput(g)
             actor = vtkActor()
