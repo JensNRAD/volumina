@@ -26,14 +26,14 @@ class ThresholdingInterpreter( QObject ):
         self._navIntr = NavigationInterpreter( navigationControler )
         self._layerStack = layerStack
         self._active_layer = None
-        self._active_layer_idx = -1
+        self._active_channel_idx = -1
         self._current_state = self.FINAL
         self._current_position = QPoint(0,0)
         # Setting default values, scaled on actual data later on 
         self._steps_mean = 10 
         self._steps_delta = self._steps_mean*2
         self._steps_scaling = 0.07
-        self._range_max = 4096.0 # hardcoded, in the case drange is not set
+        self._range_max = 4096.0 # hardcoded, in the case drange is not set in the file or 
         self._range_min = -4096.0
         self._range = np.abs(self._range_max-self._range_min)
         self._channel_range = dict()
@@ -56,14 +56,15 @@ class ThresholdingInterpreter( QObject ):
             if etype == QEvent.MouseButtonPress \
                     and event.button() == Qt.LeftButton \
                     and event.modifiers() == Qt.NoModifier \
-                    and self._navIntr.mousePositionValid(watched, event): # TODO maybe remove, if we can find out which view is active
+                    and self._navIntr.mousePositionValid(watched, event): 
+                # TODO maybe remove, if we can find out which view is active
                 self.set_active_layer()
                 if self.get_drange() != None:
                     self._range_min, self._range_max = self.get_drange()
-                if self.valid_layer:
+                if self.valid_layer():
                     self._current_state = self.THRESHOLDING_MODE
-                    if self._active_layer_idx in self._channel_range:
-                        self._active_layer.set_normalize(0, self._channel_range[self._active_layer_idx])
+                    if self._active_channel_idx in self._channel_range:
+                        self._active_layer.set_normalize(0, self._channel_range[self._active_channel_idx])
                     self._current_position = watched.mapToGlobal( event.pos() )
                     return True
                 else:
@@ -74,7 +75,7 @@ class ThresholdingInterpreter( QObject ):
                     and event.modifiers() == Qt.NoModifier \
                     and self._navIntr.mousePositionValid(watched, event):
                 self.set_active_layer()
-                if self.valid_layer:
+                if self.valid_layer():
                     self.onRightClick_resetThreshold(watched, event)
                 else:
                     pass # do nothing
@@ -82,6 +83,9 @@ class ThresholdingInterpreter( QObject ):
             else:
                 return self._navIntr.eventFilter( watched, event )
         elif self._current_state == self.NO_VALID_LAYER:
+            self.set_active_layer()
+            if self.valid_layer():
+                self._current_state = self.DEFAULT_MODE
             return self._navIntr.eventFilter( watched, event )
         elif self._current_state == self.THRESHOLDING_MODE:
             assert self._active_layer != None, 'Thresholding: No active layer set'
@@ -102,24 +106,15 @@ class ThresholdingInterpreter( QObject ):
     def onRightClick_resetThreshold(self, imageview, event):
         range = self.get_min_max_of_current_view(imageview)
         self._active_layer.set_normalize(0, (range[0],range[1]))
-        self._channel_range[self._active_layer_idx] = (range[0],range[1])
-
-    def get_number_of_channels(self, layerStack):
-        for idx, layer in enumerate(layerStack):
-            if layer._name == 'Input Data':
-                return self._active_layer.numberOfChannels()
-        return None
+        self._channel_range[self._active_channel_idx] = (range[0],range[1])
 
     def set_active_layer(self):
         for idx, layer in enumerate(self._layerStack):
             if layer._name == 'Input Data':
                 self._active_layer = layer
-                self._active_layer_idx= layer._channel
+                self._active_channel_idx= layer._channel
                 return
         self._active_layer = None
-
-    def valid_layer(self):
-        return isinstance(self._active_layer, GrayscaleLayer)
 
     def onExit_threshold( self, watched, event ):
         pass
@@ -133,6 +128,23 @@ class ThresholdingInterpreter( QObject ):
         """
         return self._active_layer._datasources[0]._rawSource._op5.Output.meta.drange
 
+
+    def valid_layer(self):
+        return isinstance(self._active_layer, GrayscaleLayer)
+
+    '''
+    def valid_layer(self):
+        """
+        returns True if the channel display type of the active
+        data file in layer has more than 1 channel, i.e. it is grayscale 
+        """
+        # cmp_description = self._active_layer._datasources[0]._rawSource._op5.Output.meta.axistags['c'].description
+        data_shape = self._active_layer._datasources[0]._rawSource._op5.Output.meta.shape
+        if data_shape[-1] > 1:
+            return True
+        else:
+            return False
+    '''
     def get_min_max_of_current_view(self, imageview):
         """
         Function returns min and max value of the current view 
@@ -150,34 +162,34 @@ class ThresholdingInterpreter( QObject ):
                        slice(x_pos, x_pos+1), 
                        slice(data_x, data_x2), 
                        slice(data_y, data_y2), 
-                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+                       slice(self._active_channel_idx, self._active_channel_idx+1)]
         if self._posModel.activeView == 1:
             y_pos = self._posModel.slicingPos5D[2]
             slicing = [slice(0, 1), 
                        slice(data_x, data_x2), 
                        slice(y_pos, y_pos+1), 
                        slice(data_y, data_y2), 
-                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+                       slice(self._active_channel_idx, self._active_channel_idx+1)]
         if self._posModel.activeView == 2:
             z_pos = self._posModel.slicingPos5D[3]
             slicing = [slice(0, 1), 
                        slice(data_x, data_x2), 
                        slice(data_y, data_y2), 
                        slice(z_pos, z_pos+1), 
-                       slice(self._active_layer_idx, self._active_layer_idx+1)]
+                       slice(self._active_channel_idx, self._active_channel_idx+1)]
         request = self._active_layer._datasources[0].request(slicing)
         result = request.wait()
         return result.min(), result.max()
 
     def onMouseMove_thresholding(self, imageview, event):
-        if self._active_layer_idx not in self._channel_range:
+        if self._active_channel_idx not in self._channel_range:
             range = self.get_min_max_of_current_view(imageview)
             range_lower = range[0]
             range_upper = range[1]
             # range_lower = self._active_layer.normalize[0][0]
             # range_upper = self._active_layer.normalize[0][1]
         else:
-            range = self._channel_range[self._active_layer_idx]
+            range = self._channel_range[self._active_channel_idx]
             range_lower = range[0]
             range_upper = range[1]
         # don't know what version is more efficient
@@ -236,7 +248,7 @@ class ThresholdingInterpreter( QObject ):
 
         # TODO test if in allowed range (i.e. max and min of data)
         self._active_layer.set_normalize(0, (a,b))
-        self._channel_range[self._active_layer_idx] = (a,b)
+        self._channel_range[self._active_channel_idx] = (a,b)
         self._current_position = pos
         
 
